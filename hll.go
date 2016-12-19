@@ -47,6 +47,13 @@ const(
 )
 
 type Hll struct {
+    // ************************************************************************
+    // Storage
+    // storage used when #type is EXPLICIT, null otherwise
+    explicitStorage *LongHashSet
+    // storage used when #type is FULL, null otherwise
+    probabilisticStorage *BitVector
+
     // current type of this HLL instance, if this changes then so should the
     // storage used (see above)
     hllType int
@@ -104,8 +111,6 @@ type Hll struct {
     // the cutoff value of the estimator for using the "large" range cardinality
     // correction formula
     largeEstimatorCutoff float64
-
-    probabilisticStorage *BitVector
 }
 
 /**
@@ -122,7 +127,7 @@ type Hll struct {
      */
 func NewHll(log2m uint64, regwidth uint64) (*Hll, error) {
     Init()
-    return NewHll2(log2m, regwidth, -1, true, FULL)
+    return NewHll2(log2m, regwidth, -1, true, EMPTY)
 }
 
 /**
@@ -236,7 +241,7 @@ func (this *Hll)initializeStorage(hllType int) {
     // nothing to be done
     break;
     case EXPLICIT:
-    //this.explicitStorage = new LongOpenHashSet();
+    this.explicitStorage,_ = NewLongHashSet()
     break;
     case SPARSE:
     //this.sparseProbabilisticStorage = new Int2ByteOpenHashMap();
@@ -261,14 +266,54 @@ func (this *Hll)initializeStorage(hllType int) {
      *         purpose and, for seeds greater than zero, matches the output
      *         of the hash provided in the PostgreSQL implementation.
      */
-func (this *Hll)Add(value uint64) {
+func (this *Hll)Add(rawValue uint64) {
     switch(this.hllType) {
+    case EMPTY:
+        // NOTE:  EMPTY type is always promoted on #addRaw()
+        if(this.explicitThreshold > 0) {
+            this.initializeStorage(EXPLICIT);
+            this.explicitStorage.add(rawValue);
+        } else if(!this.sparseOff) {
+            //initializeStorage(HLLType.SPARSE);
+            //addRawSparseProbabilistic(rawValue);
+        } else {
+            this.initializeStorage(FULL);
+            this.addRawProbabilistic(rawValue);
+        }
+        return;
+    case EXPLICIT:
+        fmt.Printf("explicitThreshold:%d\n", this.explicitThreshold)
+        this.explicitStorage.add(rawValue)
+        // promotion, if necessary
+        if(this.explicitStorage.size > uint64(this.explicitThreshold)) {
+            fmt.Printf("explicitThreshold:%d\n", this.explicitThreshold)
+        }
+        return
     case FULL:
-        this.addRawProbabilistic(value);
+        this.addRawProbabilistic(rawValue)
         return;
     default:
         panic(fmt.Sprintf("Unsupported HLL type %d", this.hllType))
         return
+    }
+}
+
+/**
+     * Computes the cardinality of the HLL.
+     *
+     * @return the cardinality of HLL. This will never be negative.
+     */
+func (this *Hll)Cardinality() uint64 {
+    switch(this.hllType) {
+    case EMPTY:
+        return 0/*by definition*/
+    case EXPLICIT:
+        return this.explicitStorage.size
+    case FULL:
+        return uint64(math.Ceil(this.fullProbabilisticAlgorithmCardinality()))
+    default:
+        panic(fmt.Sprintf("Unsupported HLL type %d", this.hllType))
+        return 0
     }
 }
 
@@ -312,4 +357,30 @@ func (this *Hll) addRawProbabilistic(rawValue uint64) {
     j := uint32(rawValue & this.mBitsMask)
 
     this.probabilisticStorage.setMaxRegister(uint64(j), uint64(p_w))
+}
+
+/**
+     * Computes the exact cardinality value returned by the HLL algorithm when
+     * represented as a {@link HLLType#FULL} HLL. Kept
+     * separate from {@link #cardinality()} for testing purposes. {@link #type}
+     * must be {@link HLLType#FULL}.
+     *
+     * @return the exact, unrounded cardinality given by the HLL algorithm
+     */
+func (this *Hll)fullProbabilisticAlgorithmCardinality() float64 {
+    m := this.m/*for performance*/;
+
+    // compute the "indicator function" -- sum(2^(-M[j])) where M[j] is the
+    // 'j'th register value
+    sum, numberOfZeroes := this.probabilisticStorage.sum()
+
+    // apply the estimate and correction to the indicator function
+    estimator := this.alphaMSquared / sum
+    if((numberOfZeroes != 0) && (estimator < this.smallEstimatorCutoff)) {
+        return smallEstimator(m, numberOfZeroes)
+    } else if(estimator <= this.largeEstimatorCutoff) {
+        return estimator;
+    } else {
+        return largeEstimator(this.log2m, this.regwidth, estimator);
+    }
 }

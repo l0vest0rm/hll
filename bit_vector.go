@@ -21,15 +21,15 @@ package hll
 const(
     // rather than doing division to determine how a bit index fits into 64bit
     // words (i.e. longs), bit shifting is used
-    LOG2_BITS_PER_WORD = 6/*=>64bits*/
-    BITS_PER_WORD = 1 << LOG2_BITS_PER_WORD
-    BITS_PER_WORD_MASK = BITS_PER_WORD - 1
+    LOG2_BITS_PER_WORD uint64 = 6/*=>64bits*/
+    BITS_PER_WORD uint64 = 1 << LOG2_BITS_PER_WORD
+    BITS_PER_WORD_MASK uint64 = BITS_PER_WORD - 1
 
     // ditto from above but for bytes (for output)
-    LOG2_BITS_PER_BYTE = 3/*=>8bits*/
-    BITS_PER_BYTE = 1 << LOG2_BITS_PER_BYTE
+    LOG2_BITS_PER_BYTE uint64 = 3/*=>8bits*/
+    BITS_PER_BYTE uint64 = 1 << LOG2_BITS_PER_BYTE
 
-    BYTES_PER_WORD = 8/*8 bytes in a long*/
+    BYTES_PER_WORD uint64 = 8/*8 bytes in a long*/
 )
 
 type BitVector struct {
@@ -114,4 +114,48 @@ func (this *BitVector)setMaxRegister(registerIndex uint64, value uint64) bool {
     } /* else -- the register value is greater (or equal) so nothing needs to be done */
 
     return (value >= registerValue)
+}
+
+/**
+     * @return a <code>LongIterator</code> for iterating starting at the register
+     *         with index zero. This will never be <code>null</code>.
+     */
+func (this *BitVector)sum() (float64, int) {
+    registerWidth := this.registerWidth;
+    words := this.words;
+    registerMask := this.registerMask;
+
+    // register setup
+    wordIndex := 0
+    remainingWordBits := BITS_PER_WORD;
+    word := words[wordIndex];
+
+    // compute the "indicator function" -- sum(2^(-M[j])) where M[j] is the
+    // 'j'th register value
+    sum := float64(0)
+    numberOfZeroes := 0/*"V" in the paper*/
+    var register uint64
+    for registerIndex := uint64(0);registerIndex < this.count; registerIndex +=1{
+        if(remainingWordBits >= registerWidth) {
+            register = word & registerMask;
+
+            // shift to the next register
+            word >>= registerWidth;
+            remainingWordBits -= registerWidth;
+        } else { /*insufficient bits remaining in current word*/
+            wordIndex++/*move to the next word*/;
+
+            register = (word | (words[wordIndex] << remainingWordBits)) & registerMask;
+
+            // shift to the next partial register (word)
+            word = words[wordIndex] >> (registerWidth - remainingWordBits);
+            remainingWordBits += BITS_PER_WORD - registerWidth;
+        }
+        sum += 1.0 / float64(uint64(1) << register)
+        if(register == 0){
+            numberOfZeroes += 1
+        }
+    }
+
+    return sum, numberOfZeroes
 }

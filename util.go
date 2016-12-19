@@ -197,3 +197,101 @@ func  leastSignificantBit(value uint64) int {
     }
     return LEAST_SIGNIFICANT_BIT[(int)( (value >> 56) & 0xFF)] + 56;
 }
+
+/**
+     * The "small range correction" formula from the HyperLogLog algorithm. Only
+     * appropriate if both the estimator is smaller than <pre>(5/2) * m</pre> and
+     * there are still registers that have the zero value.
+     *
+     * @param  m the number of registers in the HLL. <em>m<em> in the paper.
+     * @param  numberOfZeroes the number of registers with value zero. <em>V</em>
+     *         in the paper.
+     * @return a corrected cardinality estimate.
+     */
+func smallEstimator(m uint64, numberOfZeroes int) float64 {
+    return float64(m) * math.Log(float64(m) / float64(numberOfZeroes))
+}
+
+/**
+     * The "large range correction" formula from the HyperLogLog algorithm, adapted
+     * for 64 bit hashes. Only appropriate for estimators whose value exceeds
+     * the return of {@link #largeEstimatorCutoff(int, int)}.
+     *
+     * @param  log2m log-base-2 of the number of registers in the HLL. <em>b<em> in the paper.
+     * @param  registerSizeInBits the size of the HLL registers, in bits.
+     * @param  estimator the original estimator ("E" in the paper).
+     * @return a corrected cardinality estimate.
+     * @see <a href='http://research.neustar.biz/2013/01/24/hyperloglog-googles-take-on-engineering-hll/'>Blog post with section on 64 bit hashes and "large range correction"</a>
+     */
+func largeEstimator(log2m uint64, registerSizeInBits uint64, estimator float64) float64 {
+    twoToL := TWO_TO_L[(REG_WIDTH_INDEX_MULTIPLIER * registerSizeInBits) + log2m];
+    return -1 * twoToL * math.Log(1.0 - (estimator/twoToL));
+}
+
+/** Returns the least power of two smaller than or equal to 2<sup>30</sup> and larger than or equal to <code>Math.ceil( expected / f )</code>.
+	 *
+	 * @param expected the expected number of elements in a hash table.
+	 * @param f the load factor.
+	 * @return the minimum possible size for a backing array.
+	 * @throws IllegalArgumentException if the necessary size is larger than 2<sup>30</sup>.
+	 */
+func arraySize(expected int, f float64) uint64 {
+    s := uint64(math.Max( float64(2), float64(nextPowerOfTwo(uint64(math.Ceil( float64(expected) / f ) )) )))
+    if s > (1 << 30) {
+        panic(fmt.Sprintf("Too large (%d expected elements with load factor %f)", expected, f))
+        return 0
+    }
+    return s
+}
+
+/** Return the least power of two greater than or equal to the specified value.
+	 *
+	 * <p>Note that this function will return 1 when the argument is 0.
+	 *
+	 * @param x a long integer smaller than or equal to 2<sup>62</sup>.
+	 * @return the least power of two greater than or equal to the specified value.
+	 */
+func nextPowerOfTwo( x uint64) uint64 {
+    if ( x == 0 ) {
+        return 1
+    }
+
+    x--;
+    x |= x >> 1;
+    x |= x >> 2;
+    x |= x >> 4;
+    x |= x >> 8;
+    x |= x >> 16;
+    return ( x | x >> 32 ) + 1
+}
+
+/** Returns the maximum number of entries that can be filled before rehashing.
+	 *
+	 * @param n the size of the backing array.
+	 * @param f the load factor.
+	 * @return the maximum number of entries before rehashing.
+	 */
+func maxFill(n uint64, f float64) uint64 {
+    /* We must guarantee that there is always at least
+     * one free entry (even with pathological load factors). */
+    return uint64(math.Min(math.Ceil( float64(n) * f ), float64(n - 1) ))
+}
+
+/** Avalanches the bits of a long integer by applying the finalisation step of MurmurHash3.
+	 *
+	 * <p>This function implements the finalisation step of Austin Appleby's <a href="http://sites.google.com/site/murmurhash/">MurmurHash3</a>.
+	 * Its purpose is to avalanche the bits of the argument to within 0.25% bias. It is used, among other things, to scramble quickly (but deeply) the hash
+	 * values returned by {@link Object#hashCode()}.
+	 *
+	 * @param x a long integer.
+	 * @return a hash value with good avalanching properties.
+	 */
+func murmurHash3(x uint64 ) uint64 {
+    x ^= x >> 33
+    x *= 0xff51afd7ed558ccd
+    x ^= x >> 33
+    x *= 0xc4ceb9fe1a85ec53
+    x ^= x >> 33
+
+    return x
+}
