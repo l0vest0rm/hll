@@ -261,7 +261,7 @@ func (this *Hll)initializeStorage(hllType int) {
      *         purpose and, for seeds greater than zero, matches the output
      *         of the hash provided in the PostgreSQL implementation.
      */
-func (this *Hll)add(value uint64) {
+func (this *Hll)Add(value uint64) {
     switch(this.hllType) {
     case FULL:
         this.addRawProbabilistic(value);
