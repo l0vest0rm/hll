@@ -120,9 +120,9 @@ type Hll struct {
      *
      * @see #HLL(int, int, int, boolean, HLLType)
      */
-func NewHll(log2m uint64, regwidth uint64, expthresh int, sparseon bool, hllType int) (*Hll, error) {
+func NewHll(log2m uint64, regwidth uint64) (*Hll, error) {
     Init()
-    return NewHll2(log2m, regwidth, -1, true, EMPTY)
+    return NewHll2(log2m, regwidth, -1, true, FULL)
 }
 
 /**
