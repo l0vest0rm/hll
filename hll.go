@@ -21,6 +21,7 @@ package hll
 import (
     "fmt"
     "math"
+    "bytes"
 )
 
 const (
@@ -39,11 +40,11 @@ const (
 )
 
 const (
-    EMPTY = 0
-    EXPLICIT = 1
-    SPARSE = 2
-    FULL = 3
-    UNDEFINED = 4
+    UNDEFINED = 0
+    EMPTY = 1
+    EXPLICIT = 2
+    SPARSE = 3
+    FULL = 4
 )
 
 type Hll struct {
@@ -740,4 +741,196 @@ func (this *Hll) heterogenousUnion(other *Hll) {
             }
         }
     }
+}
+
+/**
+     * Serializes the HLL to an array of bytes in correspondence with the format
+     * of the specified schema version.
+     *
+     * @param  schemaVersion the schema version dictating the serialization format
+     * @return the array of bytes representing the HLL. This will never be
+     *         <code>null</code> or empty.
+     */
+func (this *Hll) ToBytes() []byte {
+    var bytes []byte
+
+    switch(this.hllType) {
+    case EMPTY:
+        bytes = make([]byte, HEADER_BYTE_COUNT)
+        break;
+    case EXPLICIT:
+        serializer := newBigEndianAscendingWordSerializer(BITS_PER_LONG, this.explicitStorage.Size())
+        it := NewLongHashSetIterator(this.explicitStorage)
+        for ; it.HasNext(); {
+            k := it.Next()
+            serializer.writeWord(k)
+        }
+
+        bytes = serializer.getBytes()
+        break;
+    case SPARSE:
+        serializer := newBigEndianAscendingWordSerializer(this.shortWordLength, this.sparseProbabilisticStorage.Size())
+
+        it := NewInt2ByteHashMapIterator(this.sparseProbabilisticStorage)
+        for ; it.HasNext(); {
+            registerIndex := it.NextKey()
+            registerValue := this.sparseProbabilisticStorage.get(registerIndex)
+            shortWord := ((uint64(registerIndex) << uint64(this.regwidth)) | uint64(registerValue))
+            //binary.Write(buf, binary.BigEndian, shortWord)
+            serializer.writeWord(shortWord)
+        }
+
+        bytes = serializer.getBytes()
+        break;
+    case FULL:
+        serializer := newBigEndianAscendingWordSerializer(this.regwidth, this.m)
+
+        it := NewBitVectorIterator(this.probabilisticStorage)
+        for ; it.HasNext(); {
+            serializer.writeWord(it.Next())
+        }
+
+        bytes = serializer.getBytes()
+        break
+    default:
+        panic(fmt.Sprintf("Unsupported HLL type %d", this.hllType))
+        return bytes
+    }
+
+    writeMetadata(bytes, this)
+
+    return bytes
+}
+
+func (this *Hll) writeMetadata(buf *bytes.Buffer) {
+    typeOrdinal := this.hllType
+
+    var explicitCutoffValue int
+    if(this.explicitOff) {
+        explicitCutoffValue = EXPLICIT_OFF;
+    } else if(this.explicitAuto) {
+        explicitCutoffValue = EXPLICIT_AUTO;
+    } else {
+        explicitCutoffValue = int(math.Log2(float64(this.explicitThreshold)) + 1)/*per spec*/
+    }
+
+    buf.WriteByte(packVersionByte(SCHEMA_VERSION, typeOrdinal))
+    buf.WriteByte(packParametersByte(this.regwidth, this.log2m))
+    buf.WriteByte(packCutoffByte(explicitCutoffValue, !this.sparseOff))
+}
+
+/**
+     * Deserializes the HLL (in {@link #toBytes(ISchemaVersion)} format) serialized
+     * into <code>bytes</code>.<p/>
+     *
+     * @param  bytes the serialized bytes of new HLL
+     * @return the deserialized HLL. This will never be <code>null</code>.
+     *
+     * @see #toBytes(ISchemaVersion)
+     */
+func NewHllFromBytes(bytes []byte) (*Hll, error) {
+    if len(bytes) < HEADER_BYTE_COUNT {
+        return nil, fmt.Errorf("too short bytes:%d", len(bytes))
+    }
+
+    versionByte := bytes[0]
+    parametersByte := bytes[1]
+    cutoffByte := bytes[2]
+
+    //version := schemaVersion(versionByte)
+    hllType := typeOrdinal(versionByte);
+    explicitCutoffValue := explicitCutoff(cutoffByte);
+    explicitOff := (explicitCutoffValue == EXPLICIT_OFF);
+    explicitAuto := (explicitCutoffValue == EXPLICIT_AUTO);
+    var log2ExplicitCutoff int
+    if explicitOff || explicitAuto {
+        log2ExplicitCutoff = -1
+    }else {
+        log2ExplicitCutoff = explicitCutoffValue - 1
+    }
+
+    regwidth := registerWidth(parametersByte)
+    log2m := registerCountLog2(parametersByte)
+    sparseon := sparseEnabled(cutoffByte)
+
+    var expthresh int
+    if explicitAuto {
+        expthresh = -1;
+    } else if explicitOff {
+        expthresh = 0;
+    } else {
+        // NOTE: take into account that the postgres-compatible constructor
+        //       subtracts one before taking a power of two.
+        expthresh = log2ExplicitCutoff + 1
+    }
+
+    hll,err := NewHll2(log2m, regwidth, expthresh, sparseon, hllType)
+    if err != nil {
+        return nil, err
+    }
+
+    // Short-circuit on empty, which needs no other deserialization.
+    if(hllType == EMPTY) {
+        return hll, nil;
+    }
+
+    var wordLength uint
+    switch(hllType) {
+    case EXPLICIT:
+        wordLength = BITS_PER_LONG
+        break;
+    case SPARSE:
+        wordLength = hll.shortWordLength
+        break;
+    case FULL:
+        wordLength = hll.regwidth
+        break;
+    default:
+        panic(fmt.Sprintf("Unsupported HLL type %d", hllType))
+    }
+
+    deserializer := newBigEndianAscendingWordDeserializer(wordLength, HEADER_BYTE_COUNT, bytes)
+
+    switch(hllType) {
+    case EXPLICIT:
+        // NOTE:  This should not exceed expthresh and this will always
+        //        be exactly the number of words that were encoded,
+        //        because the word length is at least a byte wide.
+        // SEE:   IWordDeserializer#totalWordCount()
+        for i :=uint(0); i<deserializer.totalWordCount(); i++ {
+            hll.explicitStorage.Add(deserializer.readWord());
+        }
+        break;
+    case SPARSE:
+        // NOTE:  If the shortWordLength were smaller than 8 bits
+        //        (1 byte) there would be a possibility (because of
+        //        padding arithmetic) of having one or more extra
+        //        registers read. However, this is not relevant as the
+        //        extra registers will be all zeroes, which are ignored
+        //        in the sparse representation.
+        for i :=uint(0); i<deserializer.totalWordCount(); i++ {
+            shortWord := deserializer.readWord();
+            registerValue := byte(shortWord & hll.valueMask)
+            // Only set non-zero registers.
+            if (registerValue != 0) {
+                hll.sparseProbabilisticStorage.put(uint32(shortWord >> hll.regwidth), registerValue);
+            }
+        }
+        break;
+    case FULL:
+        // NOTE:  Iteration is done using m (register count) and NOT
+        //        deserializer#totalWordCount() because regwidth may be
+        //        less than 8 and as such the padding on the 'last' byte
+        //        may be larger than regwidth, causing an extra register
+        //        to be read.
+        // SEE: IWordDeserializer#totalWordCount()
+        for i :=uint(0); i<deserializer.totalWordCount(); i++ {
+            hll.probabilisticStorage.setRegister(uint64(i), deserializer.readWord());
+        }
+        break;
+    default:
+        panic(fmt.Sprintf("Unsupported HLL type %d", hllType))
+    }
+
+    return hll ,nil
 }

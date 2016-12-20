@@ -24,6 +24,9 @@ import (
 )
 
 const(
+    BITS_PER_BYTE = 8
+    BITS_PER_LONG = 64
+    BYTE_MASK = (1 << BITS_PER_BYTE) - 1
     REG_WIDTH_INDEX_MULTIPLIER = MAXIMUM_LOG2M_PARAM + 1
 )
 

@@ -27,7 +27,6 @@ const(
 
     // ditto from above but for bytes (for output)
     LOG2_BITS_PER_BYTE = 3/*=>8bits*/
-    BITS_PER_BYTE = 1 << LOG2_BITS_PER_BYTE
 
     BYTES_PER_WORD = 8/*8 bytes in a long*/
 )
@@ -58,6 +57,35 @@ func NewBitVector(width uint, count uint) *BitVector {
     this.registerMask = (1 << width) - 1
 
     return this
+}
+
+/**
+     * @param registerIndex the index of the register whose value is to be set.
+     *        This cannot be negative
+     * @param value the value to set in the register
+     * @see #getRegister(long)
+     * @see #setMaxRegister(long, long)
+     */
+// NOTE:  if this changes then setMaxRegister() must change
+func (this *BitVector) setRegister(registerIndex uint64, value uint64) {
+    bitIndex := registerIndex * this.registerWidth;
+    firstWordIndex := (bitIndex >> LOG2_BITS_PER_WORD)/*aka (bitIndex / BITS_PER_WORD)*/;
+    secondWordIndex := ((bitIndex + this.registerWidth - 1) >> LOG2_BITS_PER_WORD)/*see above*/;
+    bitRemainder := (bitIndex & BITS_PER_WORD_MASK)/*aka (bitIndex % BITS_PER_WORD)*/;
+
+    words := this.words/*for convenience/performance*/;
+    if(firstWordIndex == secondWordIndex) {
+        // clear then set
+        words[firstWordIndex] &= ^(this.registerMask << bitRemainder);
+        words[firstWordIndex] |= (value << bitRemainder);
+    } else {/*register spans words*/
+        // clear then set each partial word
+        words[firstWordIndex] &= (1 << bitRemainder) - 1;
+        words[firstWordIndex] |= (value << bitRemainder);
+
+        words[secondWordIndex] &= ^(this.registerMask >> (BITS_PER_WORD - bitRemainder));
+        words[secondWordIndex] |= (value >> (BITS_PER_WORD - bitRemainder));
+    }
 }
 
 /**
@@ -98,19 +126,19 @@ func (this *BitVector)setMaxRegister(registerIndex uint64, value uint64) bool {
 
     // determine which is the larger and update as necessary
     if(value > registerValue) {
-    // NOTE:  matches setRegister()
-    if(firstWordIndex == secondWordIndex) {
-    // clear then set
-    words[firstWordIndex] &= ^(this.registerMask << bitRemainder)
-    words[firstWordIndex] |= (value << bitRemainder)
-    } else {/*register spans words*/
-    // clear then set each partial word
-    words[firstWordIndex] &= (1 << bitRemainder) - 1
-    words[firstWordIndex] |= (value << bitRemainder)
+        // NOTE:  matches setRegister()
+        if(firstWordIndex == secondWordIndex) {
+            // clear then set
+            words[firstWordIndex] &= ^(this.registerMask << bitRemainder)
+            words[firstWordIndex] |= (value << bitRemainder)
+        } else {/*register spans words*/
+            // clear then set each partial word
+            words[firstWordIndex] &= (1 << bitRemainder) - 1
+            words[firstWordIndex] |= (value << bitRemainder)
 
-    words[secondWordIndex] &= ^(this.registerMask >> (BITS_PER_WORD - bitRemainder))
-    words[secondWordIndex] |= (value >> (BITS_PER_WORD - bitRemainder))
-    }
+            words[secondWordIndex] &= ^(this.registerMask >> (BITS_PER_WORD - bitRemainder))
+            words[secondWordIndex] |= (value >> (BITS_PER_WORD - bitRemainder))
+        }
     } /* else -- the register value is greater (or equal) so nothing needs to be done */
 
     return (value >= registerValue)
@@ -191,4 +219,48 @@ func (this *BitVector)sum() (float64, int) {
     }
 
     return sum, numberOfZeroes
+}
+
+type BitVectorIterator struct {
+    bitVector *BitVector
+    // register setup
+    registerIndex uint
+    wordIndex uint64
+    remainingWordBits uint64
+    word uint64
+}
+
+func NewBitVectorIterator(bitVector *BitVector) *BitVectorIterator{
+    this := &BitVectorIterator{}
+    this.bitVector = bitVector
+
+    // register setup
+    this.remainingWordBits = BITS_PER_WORD
+    this.word = this.bitVector.words[0]
+    return this
+}
+
+func (this *BitVectorIterator) HasNext() bool {
+    return this.registerIndex < this.bitVector.count
+}
+
+func (this *BitVectorIterator) Next() uint64 {
+    var register uint64
+    if(this.remainingWordBits >= this.bitVector.registerWidth) {
+        register = this.word & this.bitVector.registerMask;
+
+        // shift to the next register
+        this.word >>= this.bitVector.registerWidth;
+        this.remainingWordBits -= this.bitVector.registerWidth;
+    } else { /*insufficient bits remaining in current word*/
+        this.wordIndex++/*move to the next word*/;
+
+        register = (this.word | (this.bitVector.words[this.wordIndex] << this.remainingWordBits)) & this.bitVector.registerMask;
+
+        // shift to the next partial register (word)
+        this.word = this.bitVector.words[this.wordIndex] >> (this.bitVector.registerWidth - this.remainingWordBits);
+        this.remainingWordBits += BITS_PER_WORD - this.bitVector.registerWidth;
+    }
+    this.registerIndex++;
+    return register;
 }
