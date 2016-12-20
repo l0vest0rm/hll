@@ -81,7 +81,20 @@ func NewLongHashSet2(expected uint, f float64) (*LongHashSet,error){
     return this, nil
 }
 
-func (this *LongHashSet)add(k uint64 ) bool {
+func (this *LongHashSet) Clone() *LongHashSet {
+    c := &LongHashSet{}
+    c.f = this.f
+    c.n = this.n
+    c.mask = this.mask
+    c.maxFill = this.maxFill
+    c.key = make([]uint64, c.n)
+    copy(c.key, this.key)
+    t.used = make([]bool, c.n)
+    copy(c.used, this.used)
+    return c
+}
+
+func (this *LongHashSet)Add(k uint64 ) bool {
     // The starting point.
     pos := murmur3Hash64( (k) ^ this.mask ) & this.mask;
     // There's always an unused entry.
@@ -99,6 +112,10 @@ func (this *LongHashSet)add(k uint64 ) bool {
     this.size += 1
 
     return true;
+}
+
+func (this *LongHashSet)Size() uint {
+    return this.size
 }
 
 /** Rehashes the set.

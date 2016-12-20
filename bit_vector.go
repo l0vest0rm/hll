@@ -117,6 +117,39 @@ func (this *BitVector)setMaxRegister(registerIndex uint64, value uint64) bool {
 }
 
 /**
+     * Creates a deep copy of this vector.
+     *
+     * @see java.lang.Object#clone()
+     */
+func (this *BitVector) Clone() *BitVector {
+    c := NewBitVector(this.registerWidth, this.count)
+    copy(c.words, this.words)
+    return c
+}
+
+/**
+     * @param  registerIndex the index of the register whose value is to be
+     *         retrieved.  This cannot be negative.
+     * @return the value at the specified register index
+     * @see #setRegister(long, long)
+     * @see #setMaxRegister(long, long)
+     */
+// NOTE:  if this changes then setMaxRegister() must change
+func (this *BitVector) getRegister(registerIndex uint64) uint64 {
+    bitIndex := registerIndex * this.registerWidth;
+    firstWordIndex := (bitIndex >> LOG2_BITS_PER_WORD)/*aka (bitIndex / BITS_PER_WORD)*/;
+    secondWordIndex := ((bitIndex + registerWidth - 1) >> LOG2_BITS_PER_WORD)/*see above*/;
+    bitRemainder := (bitIndex & BITS_PER_WORD_MASK)/*aka (bitIndex % BITS_PER_WORD)*/;
+
+    if(firstWordIndex == secondWordIndex){
+        return ((words[firstWordIndex] >> bitRemainder) & registerMask);
+    }
+
+    /* else -- register spans words */
+    return (words[firstWordIndex] >> bitRemainder) | (words[secondWordIndex] << (BITS_PER_WORD - bitRemainder)) & registerMask
+}
+
+/**
      * @return a <code>LongIterator</code> for iterating starting at the register
      *         with index zero. This will never be <code>null</code>.
      */

@@ -35,10 +35,11 @@ const (
     // constructor and parameter names
     MINIMUM_EXPTHRESH_PARAM = -1
     MAXIMUM_EXPTHRESH_PARAM = 18
-    MAXIMUM_EXPLICIT_THRESHOLD = (1 << (MAXIMUM_EXPTHRESH_PARAM - 1)/*per storage spec*/);
+    MAXIMUM_EXPLICIT_THRESHOLD = (1 << (MAXIMUM_EXPTHRESH_PARAM - 1)/*per storage spec*/
+    );
 )
 
-const(
+const (
     EMPTY = 0
     EXPLICIT = 1
     SPARSE = 2
@@ -50,69 +51,69 @@ type Hll struct {
     // ************************************************************************
     // Storage
     // storage used when #type is EXPLICIT, null otherwise
-    explicitStorage *LongHashSet
+    explicitStorage            *LongHashSet
     // storage used when #type is SPARSE, null otherwise
     sparseProbabilisticStorage *Int2ByteHashMap
     // storage used when #type is FULL, null otherwise
-    probabilisticStorage *BitVector
+    probabilisticStorage       *BitVector
 
     // current type of this HLL instance, if this changes then so should the
     // storage used (see above)
-    hllType int
+    hllType                    int
 
     // ------------------------------------------------------------------------
     // Characteristic parameters
     // NOTE:  These members are named to match the PostgreSQL implementation's
     //        parameters.
     // log2(the number of probabilistic HLL registers)
-    log2m uint
+    log2m                      uint
     // the size (width) each register in bits
-    regwidth uint
+    regwidth                   uint
 
     // ------------------------------------------------------------------------
     // Computed constants
     // ........................................................................
     // EXPLICIT-specific constants
     // flag indicating if the EXPLICIT representation should NOT be used
-    explicitOff bool
+    explicitOff                bool
     // flag indicating that the promotion threshold from EXPLICIT should be
     // computed automatically
     // NOTE:  this only has meaning when 'explicitOff' is false
-    explicitAuto bool
+    explicitAuto               bool
     // threshold (in element count) at which a EXPLICIT HLL is converted to a
     // SPARSE or FULL HLL, always greater than or equal to zero and always a
     // power of two OR simply zero
     // NOTE:  this only has meaning when 'explicitOff' is false
-    explicitThreshold uint
+    explicitThreshold          uint
 
     // ........................................................................
     // SPARSE-specific constants
     // the computed width of the short words
-    shortWordLength uint
+    shortWordLength            uint
     // flag indicating if the SPARSE representation should not be used
-    sparseOff bool
+    sparseOff                  bool
     // threshold (in register count) at which a SPARSE HLL is converted to a
     // FULL HLL, always greater than zero
-    sparseThreshold uint
+    sparseThreshold            uint
 
     // ........................................................................
     // Probabilistic algorithm constants
     // the number of registers, will always be a power of 2
-    m uint
+    m                          uint
     // a mask of the log2m bits set to one and the rest to zero
-    mBitsMask uint64
+    mBitsMask                  uint64
     // a mask as wide as a register (see #fromBytes())
-    valueMask uint64
+    valueMask                  uint64
     // mask used to ensure that p(w) does not overflow register (see #Constructor() and #addRaw())
-    pwMaxMask uint64
+    pwMaxMask                  uint64
     // alpha * m^2 (the constant in the "'raw' HyperLogLog estimator")
-    alphaMSquared float64
+    alphaMSquared              float64
     // the cutoff value of the estimator for using the "small" range cardinality
     // correction formula
-    smallEstimatorCutoff float64
+    smallEstimatorCutoff       float64
     // the cutoff value of the estimator for using the "large" range cardinality
     // correction formula
-    largeEstimatorCutoff float64
+    largeEstimatorCutoff       float64
 }
 
 /**
@@ -192,10 +193,11 @@ func NewHll2(log2m uint, regwidth uint, expthresh int, sparseon bool, hllType in
         this.explicitOff = false
 
         // NOTE:  This math matches the size calculation in the PostgreSQL impl.
-        fullRepresentationSize := (this.regwidth * this.m + 7/*round up to next whole byte*/)/8
+        fullRepresentationSize := (this.regwidth * this.m + 7/*round up to next whole byte*/
+        ) / 8
         numLongs := fullRepresentationSize / 8/*integer division to round down*/
 
-        if(numLongs > MAXIMUM_EXPLICIT_THRESHOLD) {
+        if (numLongs > MAXIMUM_EXPLICIT_THRESHOLD) {
             this.explicitThreshold = MAXIMUM_EXPLICIT_THRESHOLD;
         } else {
             this.explicitThreshold = uint(numLongs)
@@ -209,12 +211,12 @@ func NewHll2(log2m uint, regwidth uint, expthresh int, sparseon bool, hllType in
         this.explicitOff = false;
         this.explicitThreshold = (1 << (uint(expthresh) - 1))
     } else {
-        return nil,fmt.Errorf("'expthresh' must be at least %d and at most %d (was %d)", MINIMUM_EXPTHRESH_PARAM, MAXIMUM_EXPTHRESH_PARAM, expthresh)
+        return nil, fmt.Errorf("'expthresh' must be at least %d and at most %d (was %d)", MINIMUM_EXPTHRESH_PARAM, MAXIMUM_EXPTHRESH_PARAM, expthresh)
     }
 
     this.shortWordLength = (regwidth + log2m);
     this.sparseOff = !sparseon;
-    if(this.sparseOff) {
+    if (this.sparseOff) {
         this.sparseThreshold = 0;
     } else {
         // TODO improve this cutoff to include the cost overhead of Java
@@ -243,10 +245,10 @@ func (this *Hll)initializeStorage(hllType int) {
         // nothing to be done
         break;
     case EXPLICIT:
-        this.explicitStorage,_ = NewLongHashSet()
+        this.explicitStorage, _ = NewLongHashSet()
         break;
     case SPARSE:
-        this.sparseProbabilisticStorage,_ = NewInt2ByteHashMap()
+        this.sparseProbabilisticStorage, _ = NewInt2ByteHashMap()
         break;
     case FULL:
         this.probabilisticStorage = NewBitVector(this.regwidth, this.m)
@@ -272,10 +274,10 @@ func (this *Hll)Add(rawValue uint64) {
     switch(this.hllType) {
     case EMPTY:
         // NOTE:  EMPTY type is always promoted on #addRaw()
-        if(this.explicitThreshold > 0) {
+        if (this.explicitThreshold > 0) {
             this.initializeStorage(EXPLICIT);
             this.explicitStorage.add(rawValue);
-        } else if(!this.sparseOff) {
+        } else if (!this.sparseOff) {
             this.initializeStorage(SPARSE);
             this.addRawSparseProbabilistic(rawValue);
         } else {
@@ -287,18 +289,18 @@ func (this *Hll)Add(rawValue uint64) {
         this.explicitStorage.add(rawValue)
 
         // promotion, if necessary
-        if(this.explicitStorage.size > this.explicitThreshold) {
-            if(!this.sparseOff) {
+        if (this.explicitStorage.size > this.explicitThreshold) {
+            if (!this.sparseOff) {
                 this.initializeStorage(SPARSE);
                 it := NewLongHashSetIterator(this.explicitStorage)
-                for ; it.HasNext();{
+                for ; it.HasNext(); {
                     k := it.Next()
                     this.addRawSparseProbabilistic(k)
                 }
             } else {
                 this.initializeStorage(FULL);
                 it := NewLongHashSetIterator(this.explicitStorage)
-                for ; it.HasNext();{
+                for ; it.HasNext(); {
                     k := it.Next()
                     this.addRawProbabilistic(k)
                 }
@@ -310,10 +312,10 @@ func (this *Hll)Add(rawValue uint64) {
         this.addRawSparseProbabilistic(rawValue);
 
         // promotion, if necessary
-        if(this.sparseProbabilisticStorage.size > this.sparseThreshold) {
+        if (this.sparseProbabilisticStorage.size > this.sparseThreshold) {
             this.initializeStorage(FULL);
             it := NewInt2ByteHashMapIterator(this.sparseProbabilisticStorage)
-            for ; it.HasNext();{
+            for ; it.HasNext(); {
                 registerIndex := it.NextKey()
                 registerValue := this.sparseProbabilisticStorage.get(registerIndex)
                 this.probabilisticStorage.setMaxRegister(uint64(registerIndex), uint64(registerValue))
@@ -341,7 +343,7 @@ func (this *Hll)Cardinality() uint {
     case EMPTY:
         return 0/*by definition*/
     case EXPLICIT:
-        return this.explicitStorage.size
+        return this.explicitStorage.Size()
     case SPARSE:
         return uint(math.Ceil(this.sparseProbabilisticAlgorithmCardinality()))
     case FULL:
@@ -376,7 +378,7 @@ func (this *Hll) addRawProbabilistic(rawValue uint64) {
         // because the probability is 1/(2^(2^registerSizeInBits)).
         p_w = 0
     } else {
-        p_w = byte((1 + leastSignificantBit(substreamValue| this.pwMaxMask)))
+        p_w = byte((1 + leastSignificantBit(substreamValue | this.pwMaxMask)))
     }
 
     // Short-circuit if the register is being set to zero, since algorithmically
@@ -384,8 +386,8 @@ func (this *Hll) addRawProbabilistic(rawValue uint64) {
     // stored to save memory. (The very reason this sparse implementation
     // exists.) If a register is set to zero it will break the #algorithmCardinality
     // code.
-    if(p_w == 0) {
-    return;
+    if (p_w == 0) {
+        return;
     }
 
     // NOTE:  no +1 as in paper since 0-based indexing
@@ -411,14 +413,14 @@ func (this *Hll)addRawSparseProbabilistic(rawValue uint64) {
     substreamValue := (rawValue >> this.log2m);
     var p_w byte
 
-    if(substreamValue == 0) {
+    if (substreamValue == 0) {
         // The paper does not cover p(0x0), so the special value 0 is used.
         // 0 is the original initialization value of the registers, so by
         // doing this the multiset simply ignores it. This is acceptable
         // because the probability is 1/(2^(2^registerSizeInBits)).
         p_w = 0;
     } else {
-        p_w = (byte)(1 + leastSignificantBit(substreamValue| this.pwMaxMask));
+        p_w = (byte)(1 + leastSignificantBit(substreamValue | this.pwMaxMask));
     }
 
     // Short-circuit if the register is being set to zero, since algorithmically
@@ -426,7 +428,7 @@ func (this *Hll)addRawSparseProbabilistic(rawValue uint64) {
     // stored to save memory. (The very reason this sparse implementation
     // exists.) If a register is set to zero it will break the #algorithmCardinality
     // code.
-    if(p_w == 0) {
+    if (p_w == 0) {
         return
     }
 
@@ -434,7 +436,7 @@ func (this *Hll)addRawSparseProbabilistic(rawValue uint64) {
     j := uint32(rawValue & this.mBitsMask)
 
     currentValue := this.sparseProbabilisticStorage.get(j)
-    if(p_w > currentValue) {
+    if (p_w > currentValue) {
         this.sparseProbabilisticStorage.put(j, p_w)
     }
 }
@@ -456,9 +458,9 @@ func (this *Hll)fullProbabilisticAlgorithmCardinality() float64 {
 
     // apply the estimate and correction to the indicator function
     estimator := this.alphaMSquared / sum
-    if((numberOfZeroes != 0) && (estimator < this.smallEstimatorCutoff)) {
+    if ((numberOfZeroes != 0) && (estimator < this.smallEstimatorCutoff)) {
         return smallEstimator(m, numberOfZeroes)
-    } else if(estimator <= this.largeEstimatorCutoff) {
+    } else if (estimator <= this.largeEstimatorCutoff) {
         return estimator;
     } else {
         return largeEstimator(this.log2m, this.regwidth, estimator);
@@ -472,7 +474,7 @@ func (this *Hll) sparseProbabilisticAlgorithmCardinality() float64 {
     // 'j'th register value
     sum := float64(0)
     numberOfZeroes := 0/*"V" in the paper*/;
-    for j :=uint(0); j<m; j++ {
+    for j := uint(0); j < m; j++ {
         register := this.sparseProbabilisticStorage.get(uint32(j));
 
         sum += 1.0 / float64(uint64(1) << register)
@@ -483,11 +485,261 @@ func (this *Hll) sparseProbabilisticAlgorithmCardinality() float64 {
 
     // apply the estimate and correction to the indicator function
     estimator := this.alphaMSquared / sum;
-    if((numberOfZeroes != 0) && (estimator < this.smallEstimatorCutoff)) {
+    if ((numberOfZeroes != 0) && (estimator < this.smallEstimatorCutoff)) {
         return smallEstimator(m, numberOfZeroes);
-    } else if(estimator <= this.largeEstimatorCutoff) {
+    } else if (estimator <= this.largeEstimatorCutoff) {
         return estimator;
     } else {
         return largeEstimator(this.log2m, this.regwidth, estimator);
+    }
+}
+
+/**
+     * Computes the union of HLLs and stores the result in this instance.
+     *
+     * @param other the other {@link HLL} instance to union into this one. This
+     *        cannot be <code>null</code>.
+     */
+func (this *Hll) Union(other *Hll) {
+    // TODO: verify HLLs are compatible
+    if (this.hllType == other.hllType) {
+        this.homogeneousUnion(other);
+        return;
+    } else {
+        this.heterogenousUnion(other);
+        return;
+    }
+}
+
+/**
+     * Computes the union of two HLLs of the same type, and stores the
+     * result in this instance.
+     *
+     * @param other the other {@link HLL} instance to union into this one. This
+     *        cannot be <code>null</code>.
+     */
+func (this *Hll) homogeneousUnion(other *Hll) {
+    switch(this.hllType) {
+    case EMPTY:
+        // union of empty and empty is empty
+        return;
+    case EXPLICIT:
+        it := NewLongHashSetIterator(other.explicitStorage)
+        for ; it.HasNext(); {
+            k := it.Next()
+            this.Add(k)
+        }
+        // NOTE:  #addRaw() will handle promotion, if necessary
+        return;
+    case SPARSE:
+        it := NewInt2ByteHashMapIterator(other.sparseProbabilisticStorage)
+        for ; it.HasNext(); {
+            registerIndex := it.NextKey()
+            registerValue := other.sparseProbabilisticStorage.get(registerIndex)
+            currentRegisterValue := this.sparseProbabilisticStorage.get(registerIndex)
+            if (registerValue > currentRegisterValue) {
+                this.sparseProbabilisticStorage.put(registerIndex, registerValue);
+            }
+        }
+
+        // promotion, if necessary
+        if (this.sparseProbabilisticStorage.size > this.sparseThreshold) {
+            this.initializeStorage(FULL);
+            it := NewInt2ByteHashMapIterator(this.sparseProbabilisticStorage)
+            for ; it.HasNext(); {
+                registerIndex := it.NextKey()
+                registerValue := this.sparseProbabilisticStorage.get(registerIndex)
+                this.probabilisticStorage.setMaxRegister(uint64(registerIndex), uint64(registerValue))
+            }
+            this.sparseProbabilisticStorage = nil
+        }
+        return;
+    case FULL:
+        for i := uint64(0); i<uint64(this.m); i++ {
+            registerValue := other.probabilisticStorage.getRegister(i);
+            this.probabilisticStorage.setMaxRegister(i, registerValue);
+        }
+        return;
+    default:
+        panic(fmt.Sprintf("Unsupported HLL type %d", this.hllType))
+        return
+    }
+}
+
+// ------------------------------------------------------------------------
+// Union helpers
+/**
+ * Computes the union of two HLLs, of different types, and stores the
+ * result in this instance.
+ *
+ * @param other the other {@link HLL} instance to union into this one. This
+ *        cannot be <code>null</code>.
+ */
+func (this *Hll) heterogenousUnion(other *Hll) {
+    /*
+     * The logic here is divided into two sections: unions with an EMPTY
+     * HLL, and unions between EXPLICIT/SPARSE/FULL
+     * HLL.
+     *
+     * Between those two sections, all possible heterogeneous unions are
+     * covered. Should another type be added to HLLType whose unions
+     * are not easily reduced (say, as EMPTY's are below) this may be more
+     * easily implemented as Strategies. However, that is unnecessary as it
+     * stands.
+     */
+
+    // ....................................................................
+    // Union with an EMPTY
+    if(this.hllType == EMPTY) {
+            // NOTE:  The union of empty with non-empty HLL is just a
+            //        clone of the non-empty.
+
+        switch(other.hllType) {
+        case EXPLICIT:
+            // src:  EXPLICIT
+            // dest: EMPTY
+
+            if(other.explicitStorage.Size() <= this.explicitThreshold) {
+                this.hllType = EXPLICIT
+                this.explicitStorage = other.explicitStorage.Clone()
+            } else {
+                if(!this.sparseOff) {
+                    this.initializeStorage(SPARSE)
+                } else {
+                    this.initializeStorage(FULL)
+                }
+                it := NewLongHashSetIterator(other.explicitStorage)
+                for ; it.HasNext(); {
+                    k := it.Next()
+                    this.Add(k)
+                }
+            }
+            return;
+        case SPARSE:
+            // src:  SPARSE
+            // dest: EMPTY
+
+            if(!this.sparseOff) {
+                this.hllType = SPARSE
+                this.sparseProbabilisticStorage = other.sparseProbabilisticStorage.Clone()
+            } else {
+                this.initializeStorage(FULL)
+                it := NewInt2ByteHashMapIterator(other.sparseProbabilisticStorage)
+                for ; it.HasNext(); {
+                    registerIndex := it.NextKey()
+                    registerValue := other.sparseProbabilisticStorage.get(registerIndex)
+                    this.probabilisticStorage.setMaxRegister(uint64(registerIndex), uint64(registerValue))
+                }
+            }
+            return;
+
+        default/*case FULL*/:
+            // src:  FULL
+            // dest: EMPTY
+
+            this.hllType = FULL
+            this.probabilisticStorage = other.probabilisticStorage.Clone();
+            return;
+        }
+    } else if other.hllType == EMPTY {
+        // source is empty, so just return destination since it is unchanged
+        return;
+    } /* else -- both of the sets are not empty */
+
+    // ....................................................................
+    // NOTE: Since EMPTY is handled above, the HLLs are non-EMPTY below
+    switch(this.hllType) {
+    case EXPLICIT:
+        // src:  FULL/SPARSE
+        // dest: EXPLICIT
+        // "Storing into destination" cannot be done (since destination
+        // is by definition of smaller capacity than source), so a clone
+        // of source is made and values from destination are inserted
+        // into that.
+
+        // Determine source and destination storage.
+        // NOTE:  destination storage may change through promotion if
+        //        source is SPARSE.
+        if(other.hllType == SPARSE) {
+            if(!this.sparseOff) {
+                this.hllType = SPARSE
+                this.sparseProbabilisticStorage = other.sparseProbabilisticStorage.Clone()
+            } else {
+                this.initializeStorage(FULL)
+                it := NewInt2ByteHashMapIterator(other.sparseProbabilisticStorage)
+                for ; it.HasNext(); {
+                    registerIndex := it.NextKey()
+                    registerValue := other.sparseProbabilisticStorage.get(registerIndex)
+                    this.probabilisticStorage.setMaxRegister(uint64(registerIndex), uint64(registerValue))
+                }
+            }
+        } else /*source is HLLType.FULL*/ {
+            this.hllType = FULL
+            this.probabilisticStorage = other.probabilisticStorage.Clone();
+        }
+        it := NewLongHashSetIterator(this.explicitStorage)
+        for ; it.HasNext(); {
+            k := it.Next()
+            this.Add(k)
+        }
+        this.explicitStorage = null;
+        return;
+    case SPARSE: {
+        if(other.hllType == EXPLICIT) {
+            // src:  EXPLICIT
+            // dest: SPARSE
+            // Add the raw values from the source to the destination.
+            it := NewLongHashSetIterator(other.explicitStorage)
+            for ; it.HasNext(); {
+                k := it.Next()
+                this.Add(k)
+            }
+            // NOTE:  addRaw will handle promotion cleanup
+        } else /*source is HLLType.FULL*/ {
+            // src:  FULL
+            // dest: SPARSE
+            // "Storing into destination" cannot be done (since destination
+            // is by definition of smaller capacity than source), so a
+            // clone of source is made and registers from the destination
+            // are merged into the clone.
+
+            this.hllType = FULL
+            this.probabilisticStorage = other.probabilisticStorage.Clone();
+
+            it := NewInt2ByteHashMapIterator(this.sparseProbabilisticStorage)
+            for ; it.HasNext(); {
+                registerIndex := it.NextKey()
+                registerValue := this.sparseProbabilisticStorage.get(registerIndex)
+                this.probabilisticStorage.setMaxRegister(uint64(registerIndex), uint64(registerValue))
+            }
+            this.sparseProbabilisticStorage = null;
+        }
+        return;
+    }
+    default/*destination is HLLType.FULL*/:
+        if(other.hllType == EXPLICIT) {
+            // src:  EXPLICIT
+            // dest: FULL
+            // Add the raw values from the source to the destination.
+            // Promotion is not possible, so don't bother checking.
+
+            it := NewLongHashSetIterator(other.explicitStorage)
+            for ; it.HasNext(); {
+                k := it.Next()
+                this.Add(k)
+            }
+        } else /*source is HLLType.SPARSE*/ {
+            // src:  SPARSE
+            // dest: FULL
+            // Merge the registers from the source into the destination.
+            // Promotion is not possible, so don't bother checking.
+
+            it := NewInt2ByteHashMapIterator(other.sparseProbabilisticStorage)
+            for ; it.HasNext(); {
+                registerIndex := it.NextKey()
+                registerValue := other.sparseProbabilisticStorage.get(registerIndex)
+                this.probabilisticStorage.setMaxRegister(uint64(registerIndex), uint64(registerValue))
+            }
+        }
     }
 }
