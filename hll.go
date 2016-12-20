@@ -25,11 +25,11 @@ import (
 
 const (
     // minimum and maximum values for the log-base-2 of the number of registers in the HLL
-    MINIMUM_LOG2M_PARAM uint64 = 4
-    MAXIMUM_LOG2M_PARAM uint64 = 30
+    MINIMUM_LOG2M_PARAM = 4
+    MAXIMUM_LOG2M_PARAM = 30
     // minimum and maximum values for the register width of the HLL
-    MINIMUM_REGWIDTH_PARAM uint64 = 1
-    MAXIMUM_REGWIDTH_PARAM uint64 = 8
+    MINIMUM_REGWIDTH_PARAM = 1
+    MAXIMUM_REGWIDTH_PARAM = 8
     // minimum and maximum values for the 'expthresh' parameter of the
     // constructor that is meant to match the PostgreSQL implementation's
     // constructor and parameter names
@@ -51,6 +51,8 @@ type Hll struct {
     // Storage
     // storage used when #type is EXPLICIT, null otherwise
     explicitStorage *LongHashSet
+    // storage used when #type is SPARSE, null otherwise
+    sparseProbabilisticStorage *Int2ByteHashMap
     // storage used when #type is FULL, null otherwise
     probabilisticStorage *BitVector
 
@@ -63,9 +65,9 @@ type Hll struct {
     // NOTE:  These members are named to match the PostgreSQL implementation's
     //        parameters.
     // log2(the number of probabilistic HLL registers)
-    log2m uint64
+    log2m uint
     // the size (width) each register in bits
-    regwidth uint64
+    regwidth uint
 
     // ------------------------------------------------------------------------
     // Computed constants
@@ -81,22 +83,22 @@ type Hll struct {
     // SPARSE or FULL HLL, always greater than or equal to zero and always a
     // power of two OR simply zero
     // NOTE:  this only has meaning when 'explicitOff' is false
-    explicitThreshold int
+    explicitThreshold uint
 
     // ........................................................................
     // SPARSE-specific constants
     // the computed width of the short words
-    shortWordLength uint64
+    shortWordLength uint
     // flag indicating if the SPARSE representation should not be used
     sparseOff bool
     // threshold (in register count) at which a SPARSE HLL is converted to a
     // FULL HLL, always greater than zero
-    sparseThreshold int
+    sparseThreshold uint
 
     // ........................................................................
     // Probabilistic algorithm constants
     // the number of registers, will always be a power of 2
-    m uint64
+    m uint
     // a mask of the log2m bits set to one and the rest to zero
     mBitsMask uint64
     // a mask as wide as a register (see #fromBytes())
@@ -125,7 +127,7 @@ type Hll struct {
      *
      * @see #HLL(int, int, int, boolean, HLLType)
      */
-func NewHll(log2m uint64, regwidth uint64) (*Hll, error) {
+func NewHll(log2m uint, regwidth uint) (*Hll, error) {
     Init()
     return NewHll2(log2m, regwidth, -1, true, EMPTY)
 }
@@ -164,7 +166,7 @@ func NewHll(log2m uint64, regwidth uint64) (*Hll, error) {
      * @param type the type in the promotion hierarchy which this instance should
      *        start at. This cannot be <code>null</code>.
      */
-func NewHll2(log2m uint64, regwidth uint64, expthresh int, sparseon bool, hllType int) (*Hll, error) {
+func NewHll2(log2m uint, regwidth uint, expthresh int, sparseon bool, hllType int) (*Hll, error) {
     this := &Hll{}
     this.log2m = log2m
     if log2m < MINIMUM_LOG2M_PARAM || log2m > MAXIMUM_LOG2M_PARAM {
@@ -177,7 +179,7 @@ func NewHll2(log2m uint64, regwidth uint64, expthresh int, sparseon bool, hllTyp
     }
 
     this.m = (1 << log2m)
-    this.mBitsMask = this.m - 1
+    this.mBitsMask = uint64(this.m - 1)
     this.valueMask = (1 << regwidth) - 1
     this.pwMaxMask = pwMaxMask(regwidth)
     this.alphaMSquared = alphaMSquared(float64(this.m))
@@ -196,7 +198,7 @@ func NewHll2(log2m uint64, regwidth uint64, expthresh int, sparseon bool, hllTyp
         if(numLongs > MAXIMUM_EXPLICIT_THRESHOLD) {
             this.explicitThreshold = MAXIMUM_EXPLICIT_THRESHOLD;
         } else {
-            this.explicitThreshold = int(numLongs)
+            this.explicitThreshold = uint(numLongs)
         }
     } else if expthresh == 0 {
         this.explicitAuto = false;
@@ -217,7 +219,7 @@ func NewHll2(log2m uint64, regwidth uint64, expthresh int, sparseon bool, hllTyp
     } else {
         // TODO improve this cutoff to include the cost overhead of Java
         //      members/objects
-        largestPow2LessThanCutoff := uint64(math.Log2(float64(this.m * this.regwidth))) / this.shortWordLength
+        largestPow2LessThanCutoff := uint(math.Log2(float64(this.m * this.regwidth))) / this.shortWordLength
         this.sparseThreshold = (1 << largestPow2LessThanCutoff);
     }
 
@@ -238,17 +240,17 @@ func (this *Hll)initializeStorage(hllType int) {
     this.hllType = hllType
     switch(hllType) {
     case EMPTY:
-    // nothing to be done
-    break;
+        // nothing to be done
+        break;
     case EXPLICIT:
-    this.explicitStorage,_ = NewLongHashSet()
-    break;
+        this.explicitStorage,_ = NewLongHashSet()
+        break;
     case SPARSE:
-    //this.sparseProbabilisticStorage = new Int2ByteOpenHashMap();
-    break;
+        this.sparseProbabilisticStorage,_ = NewInt2ByteHashMap()
+        break;
     case FULL:
-    this.probabilisticStorage = NewBitVector(this.regwidth, this.m)
-    break;
+        this.probabilisticStorage = NewBitVector(this.regwidth, this.m)
+        break;
     default:
         panic(fmt.Sprintf("Unsupported HLL type %d", hllType))
     }
@@ -274,21 +276,52 @@ func (this *Hll)Add(rawValue uint64) {
             this.initializeStorage(EXPLICIT);
             this.explicitStorage.add(rawValue);
         } else if(!this.sparseOff) {
-            //initializeStorage(HLLType.SPARSE);
-            //addRawSparseProbabilistic(rawValue);
+            this.initializeStorage(SPARSE);
+            this.addRawSparseProbabilistic(rawValue);
         } else {
             this.initializeStorage(FULL);
             this.addRawProbabilistic(rawValue);
         }
         return;
     case EXPLICIT:
-        fmt.Printf("explicitThreshold:%d\n", this.explicitThreshold)
         this.explicitStorage.add(rawValue)
+
         // promotion, if necessary
-        if(this.explicitStorage.size > uint64(this.explicitThreshold)) {
-            fmt.Printf("explicitThreshold:%d\n", this.explicitThreshold)
+        if(this.explicitStorage.size > this.explicitThreshold) {
+            if(!this.sparseOff) {
+                this.initializeStorage(SPARSE);
+                it := NewLongHashSetIterator(this.explicitStorage)
+                for ; it.HasNext();{
+                    k := it.Next()
+                    this.addRawSparseProbabilistic(k)
+                }
+            } else {
+                this.initializeStorage(FULL);
+                it := NewLongHashSetIterator(this.explicitStorage)
+                for ; it.HasNext();{
+                    k := it.Next()
+                    this.addRawProbabilistic(k)
+                }
+            }
+            this.explicitStorage = nil
         }
         return
+    case SPARSE: {
+        this.addRawSparseProbabilistic(rawValue);
+
+        // promotion, if necessary
+        if(this.sparseProbabilisticStorage.size > this.sparseThreshold) {
+            this.initializeStorage(FULL);
+            it := NewInt2ByteHashMapIterator(this.sparseProbabilisticStorage)
+            for ; it.HasNext();{
+                registerIndex := it.NextKey()
+                registerValue := this.sparseProbabilisticStorage.get(registerIndex)
+                this.probabilisticStorage.setMaxRegister(uint64(registerIndex), uint64(registerValue))
+            }
+            this.sparseProbabilisticStorage = nil
+        }
+        return;
+    }
     case FULL:
         this.addRawProbabilistic(rawValue)
         return;
@@ -303,14 +336,16 @@ func (this *Hll)Add(rawValue uint64) {
      *
      * @return the cardinality of HLL. This will never be negative.
      */
-func (this *Hll)Cardinality() uint64 {
+func (this *Hll)Cardinality() uint {
     switch(this.hllType) {
     case EMPTY:
         return 0/*by definition*/
     case EXPLICIT:
         return this.explicitStorage.size
+    case SPARSE:
+        return uint(math.Ceil(this.sparseProbabilisticAlgorithmCardinality()))
     case FULL:
-        return uint64(math.Ceil(this.fullProbabilisticAlgorithmCardinality()))
+        return uint(math.Ceil(this.fullProbabilisticAlgorithmCardinality()))
     default:
         panic(fmt.Sprintf("Unsupported HLL type %d", this.hllType))
         return 0
@@ -360,6 +395,51 @@ func (this *Hll) addRawProbabilistic(rawValue uint64) {
 }
 
 /**
+     * Adds the raw value to the {@link #sparseProbabilisticStorage}.
+     * {@link #type} must be {@link HLLType#SPARSE}.
+     *
+     * @param rawValue the raw value to add to the sparse storage.
+     */
+func (this *Hll)addRawSparseProbabilistic(rawValue uint64) {
+    // p(w): position of the least significant set bit (one-indexed)
+    // By contract: p(w) <= 2^(registerValueInBits) - 1 (the max register value)
+    //
+    // By construction of pwMaxMask (see #Constructor()),
+    //      lsb(pwMaxMask) = 2^(registerValueInBits) - 2,
+    // thus lsb(any_long | pwMaxMask) <= 2^(registerValueInBits) - 2,
+    // thus 1 + lsb(any_long | pwMaxMask) <= 2^(registerValueInBits) -1.
+    substreamValue := (rawValue >> this.log2m);
+    var p_w byte
+
+    if(substreamValue == 0) {
+        // The paper does not cover p(0x0), so the special value 0 is used.
+        // 0 is the original initialization value of the registers, so by
+        // doing this the multiset simply ignores it. This is acceptable
+        // because the probability is 1/(2^(2^registerSizeInBits)).
+        p_w = 0;
+    } else {
+        p_w = (byte)(1 + leastSignificantBit(substreamValue| this.pwMaxMask));
+    }
+
+    // Short-circuit if the register is being set to zero, since algorithmically
+    // this corresponds to an "unset" register, and "unset" registers aren't
+    // stored to save memory. (The very reason this sparse implementation
+    // exists.) If a register is set to zero it will break the #algorithmCardinality
+    // code.
+    if(p_w == 0) {
+        return
+    }
+
+    // NOTE:  no +1 as in paper since 0-based indexing
+    j := uint32(rawValue & this.mBitsMask)
+
+    currentValue := this.sparseProbabilisticStorage.get(j)
+    if(p_w > currentValue) {
+        this.sparseProbabilisticStorage.put(j, p_w)
+    }
+}
+
+/**
      * Computes the exact cardinality value returned by the HLL algorithm when
      * represented as a {@link HLLType#FULL} HLL. Kept
      * separate from {@link #cardinality()} for testing purposes. {@link #type}
@@ -378,6 +458,33 @@ func (this *Hll)fullProbabilisticAlgorithmCardinality() float64 {
     estimator := this.alphaMSquared / sum
     if((numberOfZeroes != 0) && (estimator < this.smallEstimatorCutoff)) {
         return smallEstimator(m, numberOfZeroes)
+    } else if(estimator <= this.largeEstimatorCutoff) {
+        return estimator;
+    } else {
+        return largeEstimator(this.log2m, this.regwidth, estimator);
+    }
+}
+
+func (this *Hll) sparseProbabilisticAlgorithmCardinality() float64 {
+    m := this.m/*for performance*/;
+
+    // compute the "indicator function" -- sum(2^(-M[j])) where M[j] is the
+    // 'j'th register value
+    sum := float64(0)
+    numberOfZeroes := 0/*"V" in the paper*/;
+    for j :=uint(0); j<m; j++ {
+        register := this.sparseProbabilisticStorage.get(uint32(j));
+
+        sum += 1.0 / float64(uint64(1) << register)
+        if register == 0 {
+            numberOfZeroes++
+        }
+    }
+
+    // apply the estimate and correction to the indicator function
+    estimator := this.alphaMSquared / sum;
+    if((numberOfZeroes != 0) && (estimator < this.smallEstimatorCutoff)) {
+        return smallEstimator(m, numberOfZeroes);
     } else if(estimator <= this.largeEstimatorCutoff) {
         return estimator;
     } else {

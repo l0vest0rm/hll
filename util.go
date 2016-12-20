@@ -76,13 +76,13 @@ var(
 func Init(){
     for regWidth := MINIMUM_REGWIDTH_PARAM; regWidth <= MAXIMUM_REGWIDTH_PARAM; regWidth++ {
         for log2m := MINIMUM_LOG2M_PARAM ; log2m <= MAXIMUM_LOG2M_PARAM; log2m++ {
-            maxRegisterValue := (1 << regWidth) - 1
+            maxRegisterValue := (1 << uint(regWidth)) - 1
 
             // Since 1 is added to p(w) in the insertion algorithm, only
             // (maxRegisterValue - 1) bits are inspected hence the hash
             // space is one power of two smaller.
             pwBits := (maxRegisterValue - 1)
-            totalBits := (uint64(pwBits) + log2m)
+            totalBits := pwBits + log2m
             twoToL := math.Pow(2, float64(totalBits))
             TWO_TO_L[(REG_WIDTH_INDEX_MULTIPLIER * regWidth) + log2m] = twoToL
         }
@@ -96,7 +96,7 @@ func Init(){
      * @return mask a <code>long</code> mask to prevent overflow of the registers
      * @see #registerBitSize(long)
      */
-func pwMaxMask(registerSizeInBits uint64) uint64 {
+func pwMaxMask(registerSizeInBits uint) uint64 {
     return PW_MASK[registerSizeInBits]
 }
 
@@ -142,7 +142,7 @@ func alphaMSquared(m float64) float64 {
      * @return the cutoff for the small range correction.
      * @see #smallEstimator(int, int)
      */
-func smallEstimatorCutoff(m uint64) float64 {
+func smallEstimatorCutoff(m uint) float64 {
     return (float64(m) * 5) / 2
 }
 
@@ -156,7 +156,7 @@ func smallEstimatorCutoff(m uint64) float64 {
      * @see #largeEstimator(int, int, double)
      * @see <a href='http://research.neustar.biz/2013/01/24/hyperloglog-googles-take-on-engineering-hll/'>Blog post with section on 64 bit hashes and "large range correction" cutoff</a>
      */
-func largeEstimatorCutoff(log2m uint64, registerSizeInBits uint64) float64 {
+func largeEstimatorCutoff(log2m uint, registerSizeInBits uint) float64 {
     return (TWO_TO_L[(REG_WIDTH_INDEX_MULTIPLIER * registerSizeInBits) + log2m]) / 30.0
 }
 
@@ -208,7 +208,7 @@ func  leastSignificantBit(value uint64) int {
      *         in the paper.
      * @return a corrected cardinality estimate.
      */
-func smallEstimator(m uint64, numberOfZeroes int) float64 {
+func smallEstimator(m uint, numberOfZeroes int) float64 {
     return float64(m) * math.Log(float64(m) / float64(numberOfZeroes))
 }
 
@@ -223,9 +223,58 @@ func smallEstimator(m uint64, numberOfZeroes int) float64 {
      * @return a corrected cardinality estimate.
      * @see <a href='http://research.neustar.biz/2013/01/24/hyperloglog-googles-take-on-engineering-hll/'>Blog post with section on 64 bit hashes and "large range correction"</a>
      */
-func largeEstimator(log2m uint64, registerSizeInBits uint64, estimator float64) float64 {
+func largeEstimator(log2m uint, registerSizeInBits uint, estimator float64) float64 {
     twoToL := TWO_TO_L[(REG_WIDTH_INDEX_MULTIPLIER * registerSizeInBits) + log2m];
     return -1 * twoToL * math.Log(1.0 - (estimator/twoToL));
+}
+
+/** Avalanches the bits of a long integer by applying the finalisation step of MurmurHash3.
+	 *
+	 * <p>This function implements the finalisation step of Austin Appleby's <a href="http://sites.google.com/site/murmurhash/">MurmurHash3</a>.
+	 * Its purpose is to avalanche the bits of the argument to within 0.25% bias. It is used, among other things, to scramble quickly (but deeply) the hash
+	 * values returned by {@link Object#hashCode()}.
+	 *
+	 * @param x a long integer.
+	 * @return a hash value with good avalanching properties.
+	 */
+func murmur3Hash64(x uint64) uint64 {
+    x ^= x >> 33
+    x *= 0xff51afd7ed558ccd
+    x ^= x >> 33
+    x *= 0xc4ceb9fe1a85ec53
+    x ^= x >> 33
+
+    return x
+}
+
+/** Avalanches the bits of an integer by applying the finalisation step of MurmurHash3.
+	 *
+	 * <p>This function implements the finalisation step of Austin Appleby's <a href="http://sites.google.com/site/murmurhash/">MurmurHash3</a>.
+	 * Its purpose is to avalanche the bits of the argument to within 0.25% bias. It is used, among other things, to scramble quickly (but deeply) the hash
+	 * values returned by {@link Object#hashCode()}.
+	 *
+	 * @param x an integer.
+	 * @return a hash value with good avalanching properties.
+	 */
+func murmur3Hash32(x uint32) uint32 {
+    x ^= x >> 16;
+    x *= 0x85ebca6b;
+    x ^= x >> 13;
+    x *= 0xc2b2ae35;
+    x ^= x >> 16;
+    return x;
+}
+
+/** Returns the maximum number of entries that can be filled before rehashing.
+	 *
+	 * @param n the size of the backing array.
+	 * @param f the load factor.
+	 * @return the maximum number of entries before rehashing.
+	 */
+func maxFill(n uint, f float64) uint {
+    /* We must guarantee that there is always at least
+     * one free entry (even with pathological load factors). */
+    return uint(math.Min(math.Ceil( float64(n) * f ), float64(n - 1) ))
 }
 
 /** Returns the least power of two smaller than or equal to 2<sup>30</sup> and larger than or equal to <code>Math.ceil( expected / f )</code>.
@@ -235,8 +284,8 @@ func largeEstimator(log2m uint64, registerSizeInBits uint64, estimator float64) 
 	 * @return the minimum possible size for a backing array.
 	 * @throws IllegalArgumentException if the necessary size is larger than 2<sup>30</sup>.
 	 */
-func arraySize(expected int, f float64) uint64 {
-    s := uint64(math.Max( float64(2), float64(nextPowerOfTwo(uint64(math.Ceil( float64(expected) / f ) )) )))
+func arraySize(expected uint, f float64) uint {
+    s := uint(math.Max( float64(2), float64(nextPowerOfTwo(uint64(math.Ceil( float64(expected) / f ) )) )))
     if s > (1 << 30) {
         panic(fmt.Sprintf("Too large (%d expected elements with load factor %f)", expected, f))
         return 0
@@ -263,35 +312,4 @@ func nextPowerOfTwo( x uint64) uint64 {
     x |= x >> 8;
     x |= x >> 16;
     return ( x | x >> 32 ) + 1
-}
-
-/** Returns the maximum number of entries that can be filled before rehashing.
-	 *
-	 * @param n the size of the backing array.
-	 * @param f the load factor.
-	 * @return the maximum number of entries before rehashing.
-	 */
-func maxFill(n uint64, f float64) uint64 {
-    /* We must guarantee that there is always at least
-     * one free entry (even with pathological load factors). */
-    return uint64(math.Min(math.Ceil( float64(n) * f ), float64(n - 1) ))
-}
-
-/** Avalanches the bits of a long integer by applying the finalisation step of MurmurHash3.
-	 *
-	 * <p>This function implements the finalisation step of Austin Appleby's <a href="http://sites.google.com/site/murmurhash/">MurmurHash3</a>.
-	 * Its purpose is to avalanche the bits of the argument to within 0.25% bias. It is used, among other things, to scramble quickly (but deeply) the hash
-	 * values returned by {@link Object#hashCode()}.
-	 *
-	 * @param x a long integer.
-	 * @return a hash value with good avalanching properties.
-	 */
-func murmurHash3(x uint64 ) uint64 {
-    x ^= x >> 33
-    x *= 0xff51afd7ed558ccd
-    x ^= x >> 33
-    x *= 0xc4ceb9fe1a85ec53
-    x ^= x >> 33
-
-    return x
 }

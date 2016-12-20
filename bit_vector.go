@@ -21,15 +21,15 @@ package hll
 const(
     // rather than doing division to determine how a bit index fits into 64bit
     // words (i.e. longs), bit shifting is used
-    LOG2_BITS_PER_WORD uint64 = 6/*=>64bits*/
-    BITS_PER_WORD uint64 = 1 << LOG2_BITS_PER_WORD
-    BITS_PER_WORD_MASK uint64 = BITS_PER_WORD - 1
+    LOG2_BITS_PER_WORD = 6/*=>64bits*/
+    BITS_PER_WORD = 1 << LOG2_BITS_PER_WORD
+    BITS_PER_WORD_MASK = BITS_PER_WORD - 1
 
     // ditto from above but for bytes (for output)
-    LOG2_BITS_PER_BYTE uint64 = 3/*=>8bits*/
-    BITS_PER_BYTE uint64 = 1 << LOG2_BITS_PER_BYTE
+    LOG2_BITS_PER_BYTE = 3/*=>8bits*/
+    BITS_PER_BYTE = 1 << LOG2_BITS_PER_BYTE
 
-    BYTES_PER_WORD uint64 = 8/*8 bytes in a long*/
+    BYTES_PER_WORD = 8/*8 bytes in a long*/
 )
 
 type BitVector struct {
@@ -38,7 +38,7 @@ type BitVector struct {
 
     // the width of a register in bits (this cannot be more than 64 (the word size))
     registerWidth uint64
-    count uint64
+    count uint
     registerMask uint64
 }
 
@@ -47,12 +47,12 @@ type BitVector struct {
      *         zero or greater than 63 (the signed word size).
      * @param  count the number of registers.  This cannot be negative or zero
      */
-func NewBitVector(width uint64, count uint64) *BitVector {
+func NewBitVector(width uint, count uint) *BitVector {
     this := &BitVector{}
     // ceil((width * count)/BITS_PER_WORD)
     this.words = make([]uint64, ((width * count) + BITS_PER_WORD_MASK) >> LOG2_BITS_PER_WORD, ((width * count) + BITS_PER_WORD_MASK) >> LOG2_BITS_PER_WORD)
     //this.words = [((width * count) + BITS_PER_WORD_MASK) >> LOG2_BITS_PER_WORD]uint64{}
-    this.registerWidth = width
+    this.registerWidth = uint64(width)
     this.count = count
 
     this.registerMask = (1 << width) - 1
@@ -80,7 +80,7 @@ func NewBitVector(width uint64, count uint64) *BitVector {
      */
 // NOTE:  if this changes then setRegister() must change
 func (this *BitVector)setMaxRegister(registerIndex uint64, value uint64) bool {
-    bitIndex := registerIndex * this.registerWidth;
+    bitIndex := registerIndex * this.registerWidth
     firstWordIndex := bitIndex >> LOG2_BITS_PER_WORD/*aka (bitIndex / BITS_PER_WORD)*/
     secondWordIndex := (bitIndex + this.registerWidth - 1) >> LOG2_BITS_PER_WORD/*see above*/
     bitRemainder := bitIndex & BITS_PER_WORD_MASK/*aka (bitIndex % BITS_PER_WORD)*/
@@ -127,7 +127,7 @@ func (this *BitVector)sum() (float64, int) {
 
     // register setup
     wordIndex := 0
-    remainingWordBits := BITS_PER_WORD;
+    remainingWordBits := uint64(BITS_PER_WORD)
     word := words[wordIndex];
 
     // compute the "indicator function" -- sum(2^(-M[j])) where M[j] is the
@@ -135,7 +135,7 @@ func (this *BitVector)sum() (float64, int) {
     sum := float64(0)
     numberOfZeroes := 0/*"V" in the paper*/
     var register uint64
-    for registerIndex := uint64(0);registerIndex < this.count; registerIndex +=1{
+    for registerIndex := uint(0);registerIndex < this.count; registerIndex +=1{
         if(remainingWordBits >= registerWidth) {
             register = word & registerMask;
 
