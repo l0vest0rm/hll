@@ -35,8 +35,7 @@ const (
     // constructor and parameter names
     MINIMUM_EXPTHRESH_PARAM = -1
     MAXIMUM_EXPTHRESH_PARAM = 18
-    MAXIMUM_EXPLICIT_THRESHOLD = (1 << (MAXIMUM_EXPTHRESH_PARAM - 1)/*per storage spec*/
-    );
+    MAXIMUM_EXPLICIT_THRESHOLD = 1 << (MAXIMUM_EXPTHRESH_PARAM - 1)/*per storage spec*/
 )
 
 const (
@@ -193,8 +192,7 @@ func NewHll2(log2m uint, regwidth uint, expthresh int, sparseon bool, hllType in
         this.explicitOff = false
 
         // NOTE:  This math matches the size calculation in the PostgreSQL impl.
-        fullRepresentationSize := (this.regwidth * this.m + 7/*round up to next whole byte*/
-        ) / 8
+        fullRepresentationSize := (this.regwidth * this.m + 7/*round up to next whole byte*/ ) / BYTES_PER_WORD
         numLongs := fullRepresentationSize / 8/*integer division to round down*/
 
         if (numLongs > MAXIMUM_EXPLICIT_THRESHOLD) {
@@ -276,7 +274,7 @@ func (this *Hll)Add(rawValue uint64) {
         // NOTE:  EMPTY type is always promoted on #addRaw()
         if (this.explicitThreshold > 0) {
             this.initializeStorage(EXPLICIT);
-            this.explicitStorage.add(rawValue);
+            this.explicitStorage.Add(rawValue);
         } else if (!this.sparseOff) {
             this.initializeStorage(SPARSE);
             this.addRawSparseProbabilistic(rawValue);
@@ -286,7 +284,7 @@ func (this *Hll)Add(rawValue uint64) {
         }
         return;
     case EXPLICIT:
-        this.explicitStorage.add(rawValue)
+        this.explicitStorage.Add(rawValue)
 
         // promotion, if necessary
         if (this.explicitStorage.size > this.explicitThreshold) {
@@ -682,7 +680,7 @@ func (this *Hll) heterogenousUnion(other *Hll) {
             k := it.Next()
             this.Add(k)
         }
-        this.explicitStorage = null;
+        this.explicitStorage = nil;
         return;
     case SPARSE: {
         if(other.hllType == EXPLICIT) {
@@ -712,7 +710,7 @@ func (this *Hll) heterogenousUnion(other *Hll) {
                 registerValue := this.sparseProbabilisticStorage.get(registerIndex)
                 this.probabilisticStorage.setMaxRegister(uint64(registerIndex), uint64(registerValue))
             }
-            this.sparseProbabilisticStorage = null;
+            this.sparseProbabilisticStorage = nil;
         }
         return;
     }

@@ -57,7 +57,7 @@ func NewInt2ByteHashMap2(expected uint, f float64) (*Int2ByteHashMap, error){
 
     this.f = f
     this.n = arraySize( expected, f )
-    this.mask = uint32(c.n - 1)
+    this.mask = uint32(this.n - 1)
     this.maxFill = maxFill( this.n, f )
     this.key = make([]uint32, this.n)
     this.value = make([]byte, this.n)
@@ -80,11 +80,11 @@ func (this *Int2ByteHashMap) Clone() *Int2ByteHashMap {
     c.n = this.n
     c.mask = this.mask
     c.maxFill = this.maxFill
-    c.key = make([]uint64, c.n)
+    c.key = make([]uint32, c.n)
     copy(c.key, this.key)
     c.value = make([]byte, c.n)
     copy(c.value, this.value)
-    t.used = make([]bool, c.n)
+    c.used = make([]bool, c.n)
     copy(c.used, this.used)
 
     return c;

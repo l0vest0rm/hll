@@ -122,7 +122,7 @@ func (this *BitVector)setMaxRegister(registerIndex uint64, value uint64) bool {
      * @see java.lang.Object#clone()
      */
 func (this *BitVector) Clone() *BitVector {
-    c := NewBitVector(this.registerWidth, this.count)
+    c := NewBitVector(uint(this.registerWidth), this.count)
     copy(c.words, this.words)
     return c
 }
@@ -138,15 +138,15 @@ func (this *BitVector) Clone() *BitVector {
 func (this *BitVector) getRegister(registerIndex uint64) uint64 {
     bitIndex := registerIndex * this.registerWidth;
     firstWordIndex := (bitIndex >> LOG2_BITS_PER_WORD)/*aka (bitIndex / BITS_PER_WORD)*/;
-    secondWordIndex := ((bitIndex + registerWidth - 1) >> LOG2_BITS_PER_WORD)/*see above*/;
+    secondWordIndex := ((bitIndex + this.registerWidth - 1) >> LOG2_BITS_PER_WORD)/*see above*/;
     bitRemainder := (bitIndex & BITS_PER_WORD_MASK)/*aka (bitIndex % BITS_PER_WORD)*/;
 
     if(firstWordIndex == secondWordIndex){
-        return ((words[firstWordIndex] >> bitRemainder) & registerMask);
+        return ((this.words[firstWordIndex] >> bitRemainder) & this.registerMask);
     }
 
     /* else -- register spans words */
-    return (words[firstWordIndex] >> bitRemainder) | (words[secondWordIndex] << (BITS_PER_WORD - bitRemainder)) & registerMask
+    return (this.words[firstWordIndex] >> bitRemainder) | (this.words[secondWordIndex] << (BITS_PER_WORD - bitRemainder)) & this.registerMask
 }
 
 /**
