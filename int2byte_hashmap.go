@@ -81,6 +81,7 @@ func (this *Int2ByteHashMap) Clone() *Int2ByteHashMap {
     c.n = this.n
     c.mask = this.mask
     c.maxFill = this.maxFill
+    c.size = this.size
     c.key = make([]uint32, c.n)
     copy(c.key, this.key)
     c.value = make([]byte, c.n)

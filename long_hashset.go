@@ -88,6 +88,7 @@ func (this *LongHashSet) Clone() *LongHashSet {
     c.n = this.n
     c.mask = this.mask
     c.maxFill = this.maxFill
+    c.size = this.size
     c.key = make([]uint64, c.n)
     copy(c.key, this.key)
     c.used = make([]bool, c.n)

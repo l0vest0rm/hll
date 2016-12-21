@@ -19,8 +19,6 @@
 package hll
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -29,19 +27,51 @@ import (
 	"time"
 )
 
+func randClientids(count int) []uint64 {
+	clientids := make([]uint64, count)
+	for i := 0; i < count; i++ {
+		clientid := uint64(rand.Int63())
+		clientids = append(clientids, clientid)
+	}
+	return clientids
+}
+
+func TestUnion(t *testing.T) {
+	//count := 40000000
+	count := 10
+
+	clientids := randClientids(count)
+
+	h := hyperloglog(clientids, count)
+	data := h.ToBytes()
+	fmt.Printf("bslen:%d\n", len(data))
+
+	h2, _ := NewHll(15, 5)
+	h2.Union(h)
+
+	fmt.Printf("accuracy:%f\n", float64(h2.Cardinality())/float64(count))
+}
+
+func hyperloglog(clientids []uint64, count int) *Hll {
+	t1 := time.Now().UnixNano()
+
+	h, _ := NewHll(14, 5)
+	for _, clientid := range clientids {
+		h.Add(clientid)
+	}
+
+	t2 := time.Now().UnixNano()
+	fmt.Printf("time:%d,accuracy:%f\n", t2-t1, float64(h.Cardinality())/float64(count))
+	return h
+}
+
 func TestHyperloglog(t *testing.T) {
 	//count := 40000000
-	count := 40000000
-	var clientid uint64
+	count := 10
 
-	buf := bytes.NewBuffer([]byte{})
-	for i := 0; i < count; i++ {
-		clientid = uint64(rand.Int63())
-		binary.Write(buf, binary.LittleEndian, clientid)
-	}
-	b := buf.Bytes()
+	clientids := randClientids(count)
 
-	h := hyperloglog(b, count)
+	h := hyperloglog(clientids, count)
 	data := h.ToBytes()
 	fmt.Printf("bslen:%d\n", len(data))
 
@@ -56,20 +86,11 @@ func TestHyperloglog(t *testing.T) {
 		fmt.Printf("NewHllFromBytes,err:%s\n", err.Error())
 	}
 
-	fmt.Printf("accuracy:%f\n", float64(h2.Cardinality())/float64(count))
-}
+	clientids2 := randClientids(count)
+	h3 := hyperloglog(clientids2, count)
 
-func hyperloglog(b []byte, count int) *Hll {
-	t1 := time.Now().UnixNano()
-	var clientid uint64
-	offset := 0
-	h, _ := NewHll(14, 6)
-	for i := 0; i < count; i++ {
-		clientid = binary.LittleEndian.Uint64(b[offset:])
-		h.Add(clientid)
-		offset += 8
-	}
-	t2 := time.Now().UnixNano()
-	fmt.Printf("time:%d,accuracy:%f\n", t2-t1, float64(h.Cardinality())/float64(count))
-	return h
+	h.Union(h2)
+	h.Union(h3)
+
+	fmt.Printf("accuracy:%f\n", float64(h.Cardinality())/float64(count))
 }
