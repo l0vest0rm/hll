@@ -1,5 +1,5 @@
 //it is ported from [java-hll](https://github.com/aggregateknowledge/java-hll) and it is storage-compatible with the java version,thanks to the original author.
-// /**
+/**
  * Copyright 2016 l0vest0rm.hll authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License"): you may
