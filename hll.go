@@ -130,8 +130,31 @@ type Hll struct {
      * @see #HLL(int, int, int, boolean, HLLType)
      */
 func NewHll(log2m uint, regwidth uint) (*Hll, error) {
-    Init()
-    return NewHll2(log2m, regwidth, -1, true, EMPTY)
+    return NewHll3(log2m, regwidth, 0)
+}
+
+//@param estimateNum
+func NewHll3(log2m uint, regwidth uint, estimateNum uint) (*Hll, error) {
+    this := &Hll{}
+    err := this.initParams(log2m, regwidth, -1, true)
+    if err != nil{
+        return nil, err
+    }
+
+    var hllType int
+    if estimateNum == 0 {
+        hllType = EMPTY
+    }else if estimateNum < this.explicitThreshold {
+        hllType = EXPLICIT
+    } else if !this.sparseOff && estimateNum < this.sparseThreshold {
+        hllType = SPARSE
+    }else {
+        hllType = FULL
+    }
+
+    this.initializeStorage(hllType)
+
+    return this, nil
 }
 
 /**
@@ -168,16 +191,61 @@ func NewHll(log2m uint, regwidth uint) (*Hll, error) {
      * @param type the type in the promotion hierarchy which this instance should
      *        start at. This cannot be <code>null</code>.
      */
-func NewHll2(log2m uint, regwidth uint, expthresh int, sparseon bool, hllType int) (*Hll, error) {
+func NewHll5(log2m uint, regwidth uint, expthresh int, sparseon bool, hllType int) (*Hll, error) {
     this := &Hll{}
+    err := this.initParams(log2m, regwidth, expthresh, sparseon)
+    if err != nil{
+        return nil, err
+    }
+
+    this.initializeStorage(hllType)
+
+    return this, nil
+}
+
+/**
+     * NOTE: Arguments here are named and structured identically to those in the
+     *       PostgreSQL implementation, which can be found
+     *       <a href="https://github.com/aggregateknowledge/postgresql-hll/blob/master/README.markdown#explanation-of-parameters-and-tuning">here</a>.
+     *
+     * @param log2m log-base-2 of the number of registers used in the HyperLogLog
+     *        algorithm. Must be at least 4 and at most 30.
+     * @param regwidth number of bits used per register in the HyperLogLog
+     *        algorithm. Must be at least 1 and at most 8.
+     * @param expthresh tunes when the {@link HLLType#EXPLICIT} to
+     *        {@link HLLType#SPARSE} promotion occurs,
+     *        based on the set's cardinality. Must be at least -1 and at most 18.
+     *        <table>
+     *        <thead><tr><th><code>expthresh</code> value</th><th>Meaning</th></tr></thead>
+     *        <tbody>
+     *        <tr>
+     *            <td>-1</td>
+     *            <td>Promote at whatever cutoff makes sense for optimal memory usage. ('auto' mode)</td>
+     *        </tr>
+     *        <tr>
+     *            <td>0</td>
+     *            <td>Skip <code>EXPLICIT</code> representation in hierarchy.</td>
+     *        </tr>
+     *        <tr>
+     *            <td>1-18</td>
+     *            <td>Promote at 2<sup>expthresh - 1</sup> cardinality</td>
+     *        </tr>
+     *        </tbody>
+     *        </table>
+     * @param sparseon Flag indicating if the {@link HLLType#SPARSE}
+     *        representation should be used.
+     */
+func (this *Hll)initParams(log2m uint, regwidth uint, expthresh int, sparseon bool) error {
+    Init()
+
     this.log2m = log2m
     if log2m < MINIMUM_LOG2M_PARAM || log2m > MAXIMUM_LOG2M_PARAM {
-        return nil, fmt.Errorf("log2m must be at least %d and at most %d (was %d)", MINIMUM_LOG2M_PARAM, MAXIMUM_LOG2M_PARAM, log2m)
+        return fmt.Errorf("log2m must be at least %d and at most %d (was %d)", MINIMUM_LOG2M_PARAM, MAXIMUM_LOG2M_PARAM, log2m)
     }
 
     this.regwidth = regwidth;
     if regwidth < MINIMUM_REGWIDTH_PARAM || regwidth > MAXIMUM_REGWIDTH_PARAM {
-        return nil, fmt.Errorf("regwidth must be at least %d and at most %d (was %d)", MINIMUM_REGWIDTH_PARAM, MAXIMUM_REGWIDTH_PARAM, regwidth)
+        return fmt.Errorf("regwidth must be at least %d and at most %d (was %d)", MINIMUM_REGWIDTH_PARAM, MAXIMUM_REGWIDTH_PARAM, regwidth)
     }
 
     this.m = (1 << log2m)
@@ -211,7 +279,7 @@ func NewHll2(log2m uint, regwidth uint, expthresh int, sparseon bool, hllType in
         this.explicitOff = false;
         this.explicitThreshold = (1 << (uint(expthresh) - 1))
     } else {
-        return nil, fmt.Errorf("'expthresh' must be at least %d and at most %d (was %d)", MINIMUM_EXPTHRESH_PARAM, MAXIMUM_EXPTHRESH_PARAM, expthresh)
+        return fmt.Errorf("'expthresh' must be at least %d and at most %d (was %d)", MINIMUM_EXPTHRESH_PARAM, MAXIMUM_EXPTHRESH_PARAM, expthresh)
     }
 
     this.shortWordLength = (regwidth + log2m);
@@ -225,9 +293,7 @@ func NewHll2(log2m uint, regwidth uint, expthresh int, sparseon bool, hllType in
         this.sparseThreshold = (1 << largestPow2LessThanCutoff);
     }
 
-    this.initializeStorage(hllType)
-
-    return this, nil
+    return nil
 }
 
 /**
@@ -865,7 +931,7 @@ func NewHllFromBytes(bytes []byte) (*Hll, error) {
         expthresh = log2ExplicitCutoff + 1
     }
 
-    hll,err := NewHll2(log2m, regwidth, expthresh, sparseon, hllType)
+    hll,err := NewHll5(log2m, regwidth, expthresh, sparseon, hllType)
     if err != nil {
         return nil, err
     }
