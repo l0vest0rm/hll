@@ -41,7 +41,7 @@ func main(){
     b := buf.Bytes()
 
     t1 := time.Now().UnixNano()
-    h,err := hll.NewHll(14, 6)
+    h,err := hll.NewHll(14, 5)
     if err != nil {
         panic(fmt.Sprintf("hll.NewHll err:%s", err.Error()))
     }
