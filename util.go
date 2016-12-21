@@ -77,7 +77,7 @@ var(
     TWO_TO_L = [(MAXIMUM_REGWIDTH_PARAM + 1) * (MAXIMUM_LOG2M_PARAM + 1)]float64{}
 )
 
-func Init(){
+func initTwoToL(){
     for regWidth := MINIMUM_REGWIDTH_PARAM; regWidth <= MAXIMUM_REGWIDTH_PARAM; regWidth++ {
         for log2m := MINIMUM_LOG2M_PARAM ; log2m <= MAXIMUM_LOG2M_PARAM; log2m++ {
             maxRegisterValue := (1 << uint(regWidth)) - 1

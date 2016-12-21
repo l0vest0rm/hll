@@ -236,7 +236,7 @@ func NewHll5(log2m uint, regwidth uint, expthresh int, sparseon bool, hllType in
      *        representation should be used.
      */
 func (this *Hll)initParams(log2m uint, regwidth uint, expthresh int, sparseon bool) error {
-    Init()
+    initTwoToL()
 
     this.log2m = log2m
     if log2m < MINIMUM_LOG2M_PARAM || log2m > MAXIMUM_LOG2M_PARAM {
