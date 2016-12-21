@@ -26,6 +26,7 @@ import(
     "bytes"
     "encoding/binary"
     "os"
+    "time"
 )
 
 func main(){
@@ -39,6 +40,7 @@ func main(){
     }
     b := buf.Bytes()
 
+    t1 := time.Now().UnixNano()
     h,err := hll.NewHll(14, 6)
     if err != nil {
         panic(fmt.Sprintf("hll.NewHll err:%s", err.Error()))
@@ -51,7 +53,9 @@ func main(){
         offset += 8
     }
 
-    fmt.Printf("Cardinality:%d,accuracy:%f\n", h.Cardinality(), float64(h.Cardinality())/float64(count))
+    num := h.Cardinality()
+    t2 := time.Now().UnixNano()
+    fmt.Printf("time:%d ns,accuracy:%f\n", t2-t1, float64(num)/float64(count))
     data := h.ToBytes()
     fmt.Printf("bytes:%d\n", len(data))
 
@@ -67,12 +71,20 @@ func main(){
         fmt.Printf("ioutil.ReadFile,err:%s\n", err.Error())
         return
     }
-    h, err = hll.NewHllFromBytes(data)
+
+    t3 := time.Now().UnixNano()
+    h2, err := hll.NewHllFromBytes(data)
     if err != nil {
         fmt.Printf("hll.NewHllFromBytes,err:%s\n", err.Error())
         return
     }
 
-    fmt.Printf("Cardinality2:%d,accuracy:%f\n", h.Cardinality(), float64(h.Cardinality())/float64(count))
+    num = h2.Cardinality()
+    t4 := time.Now().UnixNano()
+
+    //merge
+    h.Union(h2)
+
+    fmt.Printf("time:%d ns,accuracy:%f,after union accuracy:%f\n", t4-t3, float64(num)/float64(count), float64(h.Cardinality())/float64(count))
 
 }
