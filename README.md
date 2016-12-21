@@ -1,3 +1,7 @@
+Thanks:
+=======
+`thanks to the author` of [java-hll](https://github.com/aggregateknowledge/java-hll).
+
 go-hll
 ======
 
@@ -79,12 +83,12 @@ For more information on HLL intersections, see [this blog post](http://blog.aggr
 Usage
 =====
 
-HLL is available in Maven Central. Include it in your project with:
-
+Include it in your project with:
+```go
 import "github.com/l0vest0rm/hll"
+```
 
-
-Hashing and adding a value to a new HLL:
+Below is an complete example:
 
 ```go
 package main
@@ -164,26 +168,25 @@ func main(){
 Retrieving the cardinality of an HLL:
 
 ```go
-    cardinality := hll.Cardinality();
+cardinality := hll.Cardinality();
 ```
 
 Unioning two HLLs together (and retrieving the resulting cardinality):
 
 ```go
-
-    hll1.Union(hll2)/*modifies hll1 to contain the union*/;
-    cardinalityUnion := hll1.Cardinality()
+hll1.Union(hll2)/*modifies hll1 to contain the union*/;
+cardinalityUnion := hll1.Cardinality()
 ```
 
 Reading an HLL from a hex representation of [storage specification, v1.0.0](https://github.com/aggregateknowledge/hll-storage-spec/blob/v1.0.0/STORAGE.md) (for example, retrieved from a [PostgreSQL database](https://github.com/aggregateknowledge/postgresql-hll)):
 
 ```go
-    hll := hll.NewHllFromBytes(bytes);
+hll := hll.NewHllFromBytes(bytes);
 ```
 
 Writing an HLL to its hex representation of [storage specification, v1.0.0](https://github.com/aggregateknowledge/hll-storage-spec/blob/v1.0.0/STORAGE.md) (for example, to be inserted into a [PostgreSQL database](https://github.com/aggregateknowledge/postgresql-hll)):
 
 ```go
-    bytes := hll.ToBytes();
+bytes := hll.ToBytes();
 ```
 
