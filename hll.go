@@ -1001,3 +1001,9 @@ func NewHllFromBytes(bytes []byte) (*Hll, error) {
 
     return hll ,nil
 }
+
+func (this *Hll)DebugParams(){
+    fmt.Printf("explicitThreshold:%d\n", this.explicitThreshold)
+    fmt.Printf("sparseThreshold:%d\n", this.sparseThreshold)
+    fmt.Printf("shortWordLength:%d\n", this.shortWordLength)
+}

@@ -55,7 +55,7 @@ func TestUnion(t *testing.T) {
 func hyperloglog(clientids []uint64, count int) *Hll {
 	t1 := time.Now().UnixNano()
 
-	h, _ := NewHll(14, 5)
+	h, _ := NewHll(16, 5)
 	for _, clientid := range clientids {
 		h.Add(clientid)
 	}
@@ -67,7 +67,7 @@ func hyperloglog(clientids []uint64, count int) *Hll {
 
 func TestHyperloglog(t *testing.T) {
 	//count := 40000000
-	count := 10
+	count := 40000000
 
 	clientids := randClientids(count)
 
@@ -93,4 +93,9 @@ func TestHyperloglog(t *testing.T) {
 	h.Union(h3)
 
 	fmt.Printf("accuracy:%f\n", float64(h.Cardinality())/float64(count))
+}
+
+func TestHyperloglogParams(t *testing.T) {
+	h, _ := NewHll(16, 5)
+	h.DebugParams()
 }
