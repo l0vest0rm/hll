@@ -42,7 +42,7 @@ func TestUnion(t *testing.T) {
 
 	clientids := randClientids(count)
 
-	h := hyperloglog(clientids, count)
+	h := hyperloglog(clientids)
 	data := h.ToBytes()
 	fmt.Printf("bslen:%d\n", len(data))
 
@@ -52,26 +52,32 @@ func TestUnion(t *testing.T) {
 	fmt.Printf("accuracy:%f\n", float64(h2.Cardinality())/float64(count))
 }
 
-func hyperloglog(clientids []uint64, count int) *Hll {
+func hyperloglog(clientids []uint64) *Hll {
+	fmt.Printf("clientids:%d\n", len(clientids))
 	t1 := time.Now().UnixNano()
 
+	hllType := -1
 	h, _ := NewHll(16, 5)
-	for _, clientid := range clientids {
+	for i, clientid := range clientids {
+		if h.hllType != hllType {
+			fmt.Printf("index:%d,hllType:%d\n", i, h.hllType)
+			hllType = h.hllType
+		}
 		h.Add(clientid)
 	}
 
 	t2 := time.Now().UnixNano()
-	fmt.Printf("time:%d,accuracy:%f\n", t2-t1, float64(h.Cardinality())/float64(count))
+	fmt.Printf("time:%d,accuracy:%f\n", t2-t1, float64(h.Cardinality())/float64(len(clientids)))
 	return h
 }
 
 func TestHyperloglog(t *testing.T) {
 	//count := 40000000
-	count := 40000000
+	count := 6000
 
 	clientids := randClientids(count)
 
-	h := hyperloglog(clientids, count)
+	h := hyperloglog(clientids)
 	data := h.ToBytes()
 	fmt.Printf("bslen:%d\n", len(data))
 
@@ -87,7 +93,7 @@ func TestHyperloglog(t *testing.T) {
 	}
 
 	clientids2 := randClientids(count)
-	h3 := hyperloglog(clientids2, count)
+	h3 := hyperloglog(clientids2)
 
 	h.Union(h2)
 	h.Union(h3)
@@ -97,5 +103,7 @@ func TestHyperloglog(t *testing.T) {
 
 func TestHyperloglogParams(t *testing.T) {
 	h, _ := NewHll(16, 5)
-	h.DebugParams()
+	fmt.Printf("explicitThreshold:%d\n", h.explicitThreshold)
+	fmt.Printf("sparseThreshold:%d\n", h.sparseThreshold)
+	fmt.Printf("shortWordLength:%d\n", h.shortWordLength)
 }
